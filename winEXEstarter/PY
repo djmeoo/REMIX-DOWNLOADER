@@ -1,0 +1,179 @@
+import subprocess
+import sys
+
+# Funktion zum Installieren von Paketen
+def install_package(package):
+    subprocess.check_call([sys.executable, "-m", "pip", "install", package])
+
+# Prüfen, ob yt_dlp und pygame installiert sind, und sie installieren, falls nicht
+def check_and_install_dependencies():
+    try:
+        import yt_dlp  # Versuchen, yt_dlp zu importieren
+    except ImportError:
+        print("yt_dlp nicht gefunden, Installation wird durchgeführt...")
+        install_package("yt-dlp")
+
+    try:
+        import pygame  # Versuchen, pygame zu importieren
+    except ImportError:
+        print("pygame nicht gefunden, Installation wird durchgeführt...")
+        install_package("pygame")
+
+# Abhängigkeiten überprüfen
+check_and_install_dependencies()
+import os  # Betriebssystem-Funktionen zum Arbeiten mit Dateien und Verzeichnissen
+import re  # Reguläre Ausdrücke für Textverarbeitung
+from datetime import datetime  # Zum Erstellen von Zeitstempeln für Verzeichnisse
+import pygame  # Zum Abspielen eines Sounds nach dem Download
+import yt_dlp as youtube_dl  # Bibliothek zum Herunterladen von YouTube-Videos
+
+# Standard-Speicherort im Musik-Ordner des Benutzers
+desktop_path = os.path.join(os.path.join(os.environ["USERPROFILE"]), "Desktop")
+default_directory = os.path.join(desktop_path, "DJMeo")
+
+if not os.path.exists(default_directory):
+    os.makedirs(default_directory)
+
+print(f"Ordner erstellt (oder existiert bereits): {default_directory}")
+
+# Benutzerabfrage für den Speicherort
+user_input = input(f"Gib den Speicherort für die Musik ein (Drücke Enter für Standard: {default_directory}): ").strip()
+
+# Falls der Benutzer nichts eingibt, wird der Standardpfad verwendet
+main_output_directory = user_input if user_input else default_directory
+
+# Sicherstellen, dass der Pfad ein gültiger String ist
+if isinstance(main_output_directory, list):
+    main_output_directory = main_output_directory[0]  # Falls es aus Versehen eine Liste ist, nimm das erste Element
+
+# Falls der Ordner nicht existiert, erstelle ihn
+if not os.path.exists(main_output_directory):
+    os.makedirs(main_output_directory)
+
+print(f"Musik wird gespeichert in: {main_output_directory}")
+
+# Funktion zum Suchen und Herunterladen von Songs von YouTube
+def download_song(artist, song_title, output_path):
+    def search_and_download_youtube(query):
+        print(f"Suche auf YouTube nach: {query}")
+        ydl_opts = {
+            "format": "bestaudio/best",  # Beste verfügbare Audioqualität wählen
+            "extractaudio": True,  # Nur die Audiospur extrahieren
+            "audioformat": "mp3",  # Audioformat als MP3 festlegen
+            "outtmpl": os.path.join(output_path, "%(title)s.%(ext)s"),  # Speicherpfad definieren
+            "noplaylist": True,  # Keine kompletten Playlists herunterladen
+        }
+        with youtube_dl.YoutubeDL(ydl_opts) as ydl:
+            try:
+                # YouTube-Suche mit der Query durchführen
+                result = ydl.extract_info(f"ytsearch:{query}", download=True)
+                if "entries" in result and result["entries"]:
+                    for entry in result["entries"]:
+                        title = entry["title"]
+                        duration = entry["duration"]  # Dauer des Songs in Sekunden
+                        
+                        # Wenn die Dauer des Songs mehr als 15 Minuten beträgt, überspringen
+                        if duration > 900:
+                            print(f"{title} ist länger als 15 Minuten und wird übersprungen.")
+                            continue
+                        
+                        filename = os.path.join(output_path, f"{title}.mp3")
+                        if not os.path.exists(filename):
+                            print(f"Download abgeschlossen: {title}.mp3")
+                            return True
+                        else:
+                            print(f"{title}.mp3 existiert bereits. Überspringen.")
+            except Exception as e:
+                print(f"Fehler beim Herunterladen von YouTube: {str(e)}")
+        return False
+
+    # Mögliche Varianten des Songtitels für die Suche definieren
+    queries = [
+        f"{artist} {song_title} extended version",
+        f"{artist} {song_title} extended remix",
+        f"{artist} {song_title} remix",
+        f"{artist} {song_title} rmx",
+        f"{artist} {song_title} lyrics",
+        f"{artist} {song_title} dance version",
+        f"{artist} {song_title}"
+    ]
+    
+    # Die Suchanfragen durchgehen, bis ein Download erfolgreich war
+    for i in queries:
+        search_and_download_youtube(i)
+
+# Funktion zum Einlesen der Songliste aus einer Datei
+def read_songs_from_file(file_path):
+    songs = []
+    with open(file_path, "r", encoding="utf-8") as file:
+        for line in file:
+            line = line.strip()
+            if line and not line.startswith("#"):  # Kommentare und leere Zeilen ignorieren
+                line = line.replace(" – ", " - ")  # Ersetze das lange Minus durch ein normales Minus
+                parts = line.split(" - ", 1)
+                if len(parts) == 2:
+                    artist, title = parts
+                    songs.append({"artist": artist, "title": title})
+                else:
+                    print(f"Ungültiges Format: {line}")
+    print(f"{len(songs)} Songs aus der Datei gelesen: {file_path}")
+    return songs
+
+# Funktion zum Einlesen der blockierten Songs
+def read_blocked_songs(file_path):
+    blocked_songs = set()
+    if os.path.exists(file_path):  # Prüfen, ob die Datei existiert
+        with open(file_path, "r", encoding="utf-8") as file:
+            for line in file:
+                blocked_songs.add(line.strip())  # Jeder blockierte Song wird als String gespeichert
+    print(f"{len(blocked_songs)} blockierte Songs aus der Datei gelesen: {file_path}")
+    return blocked_songs
+
+# Funktion zum Speichern der blockierten Songs
+def save_blocked_songs(file_path, blocked_songs):
+    with open(file_path, "w", encoding="utf-8") as file:
+        for song in blocked_songs:
+            file.write(song + "\n")
+    print(f"{len(blocked_songs)} blockierte Songs in der Datei gespeichert: {file_path}")
+
+# Hauptverzeichnis für die Downloads
+main_output_directory = user_input if user_input else default_directory
+
+# Falls das Hauptverzeichnis nicht existiert, wird es erstellt
+if not os.path.exists(main_output_directory):
+    os.makedirs(main_output_directory)
+
+# Erstellen eines neuen Unterverzeichnisses basierend auf der aktuellen Uhrzeit
+current_time = datetime.now().strftime("%H%M")  # Zeitstempel im Format HHMM
+output_directory = os.path.join(main_output_directory, f"{current_time}-DJMeo-Download")
+os.makedirs(output_directory)
+
+# Datei mit der Songliste einlesen
+song_file = "songs.txt"
+songs = read_songs_from_file(song_file)
+
+# Datei mit den blockierten Songs einlesen
+blocked_file = "blocked.txt"
+blocked_songs = read_blocked_songs(blocked_file)
+
+# Jeden Song herunterladen, falls er nicht blockiert ist
+for song in songs:
+    song_key = f"{song['artist']} - {song['title']}"  # Hier die korrekte Syntax für den f-String
+    print(f"Processing {song_key}")
+    if song_key not in blocked_songs:
+        download_song(song["artist"], song["title"], output_directory)
+        blocked_songs.add(song_key)  # Nach erfolgreichem Download blockieren
+        with open(blocked_file, "a", encoding="utf-8") as file:
+            file.write(song_key + "\n")
+    else:
+        print(f"{song_key} ist bereits blockiert.")
+
+# Nach Abschluss aller Downloads wird ein Sound abgespielt
+print("Alle Downloads abgeschlossen!")
+pygame.mixer.init()  # Pygame Mixer initialisieren
+pygame.mixer.music.load("win98_startup.mp3")  # Sounddatei laden
+pygame.mixer.music.play()  # Sound abspielen
+
+# Warten, bis die Musik abgespielt wurde
+while pygame.mixer.music.get_busy():
+    pygame.time.Clock().tick(10)
